@@ -8,12 +8,6 @@ library(tidyr)
 # ou.scrape = read_html("https://thefootballlines.com/nfl-over-under/week-1") 
 # games.scrape = read_html("https://thefootballlines.com/nfl-schedule/week-17/2018")
 # 
-# games = as.data.frame(
-#   games.scrape %>% 
-#   html_nodes("div.game") %>%
-#   html_text())
-# names(games) = "games"
-# games = games %>%  separate(games, c("away","home"))
 
 pb = txtProgressBar(min = 1, max = 18, initial = 1)
 w.l = x.l = list()
@@ -61,19 +55,7 @@ names(soup.tmp) = c("home","home.score","away","away.score","date","open.total",
                 "close.result","total", "away.open", "away.close","home.open","home.close")
 soup.tmp$home.change = soup.tmp$home.close - soup.tmp$home.open
 soup.tmp$total.change = soup.tmp$close.total - soup.tmp$open.total
-# soup.tmp$favorite.open = soup.tmp$favorite.close = "push"
-# soup.tmp$favorite.open[which(soup.tmp$home.open < 0)] = "home"
-# soup.tmp$favorite.open[which(soup.tmp$home.open > 0)] = "away"
-# soup.tmp$favorite.close[which(soup.tmp$home.close < 0)] = "home"
-# soup.tmp$favorite.close[which(soup.tmp$home.close > 0)] = "away"
-# soup.tmp$fav.cover.open = ifelse((soup.tmp$home.score + soup.tmp$home.open >= soup.tmp$away.score & soup.tmp$favorite.open=="home") | 
-#                              (soup.tmp$away.score + soup.tmp$away.open >= soup.tmp$home.score & soup.tmp$favorite.open=="away") , "yes", "no")
-# soup.tmp$fav.cover.close = ifelse((soup.tmp$home.score + soup.tmp$home.open >= soup.tmp$away.score & soup.tmp$favorite.close=="home") | 
-#                               (soup.tmp$away.score + soup.tmp$away.open >= soup.tmp$home.score & soup.tmp$favorite.close=="away") , "yes", "no")
-# soup.tmp$fav.cover.change = ifelse(soup.tmp$fav.cover.open==soup.tmp$fav.cover.close, "no", "yes")
-# 
-# soup.tmp$spread.open = abs(soup.tmp$home.open)
-# soup.tmp$spread.close = abs(soup.tmp$home.close)
+
 soup.tmp$spread.change = soup.tmp$home.close - soup.tmp$home.open
 # soup.tmp$fav.change = ifelse(soup.tmp$favorite.open==soup.tmp$favorite.close, "no", "yes")
 soup.tmp$week.bin = cut(soup.tmp$week, c(1,4,8,12,Inf), right = FALSE)
@@ -86,10 +68,6 @@ soup.tmp$total.result[which(soup.tmp$home.score + soup.tmp$away.score < soup.tmp
 soup.tmp$total.result = factor(as.character(soup.tmp$total.result),levels = c("over", "under"))
 
 soup.tmp$total.change.p = soup.tmp$total.change/soup.tmp$open.total
-# soup.tmp$spread.change.p = soup.tmp$spread.change/soup.tmp$home.open
-# soup.tmp$spread.change.p[which(soup.tmp$spread.change.p==-Inf)] = 0
-# soup.tmp = soup.tmp[complete.cases(soup.tmp),]
-# soup.tmp$fav.change = ifelse(soup.tmp$favorite.open==soup.tmp$favorite.close, "no", "yes")
 soup.tmp = soup.tmp[which(!duplicated(soup.tmp[,c("home","away","week","season")])),]
 
 soup.tmp$home[which(soup.tmp$home=="JAC")] = "JAX"; soup.tmp$away[which(soup.tmp$away=="JAC")] = "JAX"

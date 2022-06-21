@@ -1,0 +1,226 @@
+#### past seasons ----
+
+library(rvest)
+library(dplyr)
+library(tidyr)
+
+# lines.scrape = read_html("https://thefootballlines.com/nfl-lines/week-1")
+# ou.scrape = read_html("https://thefootballlines.com/nfl-over-under/week-1") 
+# games.scrape = read_html("https://thefootballlines.com/nfl-schedule/week-17/2018")
+# 
+
+pb = txtProgressBar(min = 1, max = 18, initial = 1)
+w.l = x.l = list()
+for (w in 1:18) {
+  lines.scrape = read_html(paste0("https://thefootballlines.com/nfl-lines/week-",w))
+  lines.count = length(lines.scrape %>% html_nodes("table"))
+  for (i in 1:lines.count) {
+    w.l[[i]] = lines.scrape %>%
+      html_nodes("table") %>%
+      .[[i]] %>%
+      html_table(fill = TRUE)
+  }
+  x.l[[w]] = do.call(rbind, w.l)
+  x.l[[w]]$week = w
+  setTxtProgressBar(pb, w)
+}
+sp = do.call(rbind, x.l)
+
+pb = txtProgressBar(min = 1, max = 18, initial = 1)
+w.l = x.l = list()
+for (w in 1:18) {
+  ou.scrape = read_html(paste0("https://thefootballlines.com/nfl-over-under/week-",w))
+  ou.count = length(ou.scrape %>% html_nodes("table"))
+  for (i in 1:ou.count) {
+    w.l[[i]] = ou.scrape %>%
+      html_nodes("table") %>%
+      .[[i]] %>%
+      html_table(fill = TRUE)
+  }
+  x.l[[w]] = do.call(rbind, w.l)
+  x.l[[w]]$week = w
+  setTxtProgressBar(pb, w)
+}
+ou = do.call(rbind, x.l)
+names(ou)[1] = "Road v Home"
+# sp = sp[which(sp$close.result!="push" & abs(sp$total.change) <= 7),]
+# sp$close.result = as.factor(sp$close.result)
+# table(sp$close.result)
+soup.tmp = merge(ou, sp)#, all = TRUE)
+soup.tmp = soup.tmp %>% 
+  separate(col = "Road v Home", sep = rep(" ",4), into = c("home","home.score","drop","away","away.score")) %>%
+  select(-drop)
+soup.tmp[c(2,4)] = apply(soup.tmp[,c(2,4)], 2, FUN = as.numeric)
+names(soup.tmp) = c("home","home.score","away","away.score","date","open.total","close.total","week","open.result",
+                "close.result","total", "away.open", "away.close","home.open","home.close")
+soup.tmp$home.change = soup.tmp$home.close - soup.tmp$home.open
+soup.tmp$total.change = soup.tmp$close.total - soup.tmp$open.total
+
+soup.tmp$spread.change = soup.tmp$home.close - soup.tmp$home.open
+# soup.tmp$fav.change = ifelse(soup.tmp$favorite.open==soup.tmp$favorite.close, "no", "yes")
+soup.tmp$week.bin = cut(soup.tmp$week, c(1,4,8,12,Inf), right = FALSE)
+soup.tmp$date = as.Date(soup.tmp$date, "%Y-%m-%d")
+soup.tmp$season = ifelse(as.integer(format(soup.tmp$date, "%m"))==1, as.integer(format(soup.tmp$date, "%Y")) - 1, as.integer(format(soup.tmp$date, "%Y")))
+
+soup.tmp$total.result = "push"
+soup.tmp$total.result[which(soup.tmp$home.score + soup.tmp$away.score > soup.tmp$close.total)] = "over"
+soup.tmp$total.result[which(soup.tmp$home.score + soup.tmp$away.score < soup.tmp$close.total)] = "under"
+soup.tmp$total.result = factor(as.character(soup.tmp$total.result),levels = c("over", "under"))
+
+soup.tmp$total.change.p = soup.tmp$total.change/soup.tmp$open.total
+soup.tmp = soup.tmp[which(!duplicated(soup.tmp[,c("home","away","week","season")])),]
+
+soup.tmp$home[which(soup.tmp$home=="JAC")] = "JAX"; soup.tmp$away[which(soup.tmp$away=="JAC")] = "JAX"
+soup.tmp$home[which(soup.tmp$home=="LAR")] = "LA"; soup.tmp$away[which(soup.tmp$away=="LAR")] = "LA"
+soup.tmp$home[which(soup.tmp$home=="STL")] = "LA"; soup.tmp$away[which(soup.tmp$away=="STL")] = "LA"
+soup.tmp$home[which(soup.tmp$home=="SD")] = "LAC"; soup.tmp$away[which(soup.tmp$away=="SD")] = "LAC"
+soup.tmp$home[which(soup.tmp$home=="OAK")] = "LV"; soup.tmp$away[which(soup.tmp$away=="OAK")] = "LV"
+
+
+#### add in ppg/epa weekly data ----
+soup = merge(soup.tmp, running.ppg %>% ungroup() %>% select(-opp, -score, -opp.score, -result, -home.id, -game_id), by.x = c("home","week","season"), by.y = c("team","week","season"))
+soup = merge(soup, running.ppg %>% ungroup() %>% select(-opp, -score, -opp.score, -result, -home.id, -game_id), by.x = c("away","week","season"), by.y = c("team","week","season"), suffixes = c(".home",".away"))
+soup = soup[complete.cases(soup),] %>% 
+  filter(season > 2011) %>% 
+  mutate(mean.diff.n.home = mean.pts.n.home - mean.against.n.home, 
+         mean.diff.n.away = mean.pts.n.away - mean.against.n.away,
+         home.win = as.factor(home.score > away.score)) %>% 
+  arrange(season, week)
+
+#soup = soup %>% filter(close.result != "push", abs(total.change) <= 10, abs(spread.change) <= 10)
+
+#### current week scrape ----
+
+library(rvest)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(reshape2)
+library(readr)
+library(randomForest)
+library(modelr)
+
+week.no = 17
+
+if(week.no < 4) {
+  week.no.bin = "[1,4)"
+} else if (week.no < 8) {
+  week.no.bin = "[4,8)"
+} else if (week.no < 12) {
+  week.no.bin = "[8,12)"
+} else week.no.bin = "[12,Inf)"
+
+this.week.url = read_html("https://thefootballlines.com/nfl-lines")
+#ou.scrape = read_html("https://thefootballlines.com/nfl-over-under/week-1") 
+#games.scrape = read_html("https://thefootballlines.com/nfl-schedule/week-17/2018")
+#tbls <- html_nodes(this.week.url, "table")
+
+this.week.games = this.week.url %>% 
+  html_nodes('.game') %>%
+  html_text()
+
+this.week.ou.t = this.week.url %>% 
+  html_nodes('.left') %>%
+  html_text()
+
+this.week.spread.t = this.week.url %>% 
+  html_nodes('.right') %>%
+  html_text()
+
+this.week.ou = this.week.spread = rep(NA, 16)
+j = 1
+for (i in 1:(length(this.week.games))) {
+  #if (!i %in% c(2)) {
+    this.week.ou[i] = this.week.ou.t[j]
+    this.week.spread[i] = this.week.spread.t[j]
+    j = j+1
+  #}
+}
+
+this.week.ou = data.frame(game = this.week.games, 
+                          open = this.week.ou[seq(1,length(this.week.ou), by = 2)],
+                          close = this.week.ou[seq(2,length(this.week.ou)+1, by = 2)]) 
+#this.week.ou = this.week.ou[-1,]
+this.week.ou$open.total = as.numeric(trimws(gsub("O ","", str_split(this.week.ou$open, "\\|", simplify = TRUE)[,1])))
+this.week.ou$open.total.odds = as.numeric(trimws(str_split(this.week.ou$open, "\\|", simplify = TRUE)[,2]))
+this.week.ou$close.total = as.numeric(trimws(gsub("O ","", str_split(this.week.ou$close, "\\|", simplify = TRUE)[,1])))
+this.week.ou$close.total.odds = as.numeric(trimws(str_split(this.week.ou$close, "\\|", simplify = TRUE)[,2]))
+this.week.ou$open = this.week.ou$close = NULL
+
+this.week.spread = data.frame(game = this.week.games,
+                              open = this.week.spread[seq(1,length(this.week.spread), 2)],
+                              close = this.week.spread[seq(2,length(this.week.spread), 2)])
+#this.week.spread = this.week.spread[-1,]
+this.week.spread$home.open = as.numeric(trimws(str_split(this.week.spread$open, "\\|", simplify = TRUE)[,1]))
+this.week.spread$home.open.odds = as.numeric(trimws(str_split(this.week.spread$open, "\\|", simplify = TRUE)[,2]))
+this.week.spread$home.close = as.numeric(trimws(str_split(this.week.spread$close, "\\|", simplify = TRUE)[,1]))
+this.week.spread$home.close.odds = as.numeric(trimws(str_split(this.week.spread$close, "\\|", simplify = TRUE)[,2]))
+#this.week.spread$home.open[which(is.na(this.week.spread$home.open))] = 0
+#this.week.spread$home.close[which(is.na(this.week.spread$home.close))] = 0
+
+#this.week.spread$game = this.week.games[-1]
+#this.week.ou[9,c("open.total","close.total")] = c(49,45)
+#this.week.spread[9,c("home.open","home.close")] = c(-7.5,-7.5)
+
+
+
+#this.week.spread$home.change.s = scale(this.week.spread$home.change)[,1]
+this.week.spread$open = this.week.spread$close = NULL
+# new.open.total = this.week$close.total
+# new.close.total = this.week$open.total
+# new.open.spread = this.week$home.close
+# new.close.spread = this.week$home.open
+# 
+# this.week$close.total = new.close.total
+# this.week$open.total = new.open.total
+# this.week$home.open = new.open.spread
+# this.week$home.close = new.close.spread
+# 
+# old.p = this.week$total.change.p
+# this.week$total.change.p = -this.week$total.change.p
+
+this.week = merge(this.week.ou, this.week.spread, by = "game")
+
+#this.week[which(this.week$game=="NYG @ BAL"),c(4,5,8,9)] = c(43.5, -109, -10.5, -108)
+#this.week[which(this.week$game=="CAR @ WAS"),c(4,5,8,9)] = c(42.5, -108, -1, -109)
+
+this.week$week = week.no
+this.week$home.change = this.week$home.close - this.week$home.open
+#this.week$week.bin = factor(week.no.bin, levels = levels(soup.tot$week.bin))
+this.week$total.change = -(this.week$close.total - this.week$open.total)
+this.week$home.change = this.week$home.close - this.week$home.open
+this.week$total.change.p = this.week$total.change/this.week$open.total
+#this.week$total.change.p.downHalf = this.week$total.change/(this.week$open.total - .5)
+#this.week$total.change.p.upHalf = this.week$total.change/(this.week$open.total + .5)
+this.week = this.week %>%  separate(game, c("away","home"))
+#this.week[which(is.na(this.week), arr.ind = TRUE)] = 0
+
+this.week$home[which(this.week$home=="JAC")] = "JAX"; this.week$away[which(this.week$away=="JAC")] = "JAX"
+
+this.week = this.week[complete.cases(this.week),]
+
+this.week.ppg = merge(this.week, ppg.new %>% ungroup() %>% select(-opp, -score, -opp.score, -result, -week), by.x = c("home"), by.y = c("team"))
+this.week.ppg = merge(this.week.ppg, ppg.new %>% ungroup() %>% select(-opp, -score, -opp.score, -result, -week), by.x = c("away"), by.y = c("team"), suffixes = c(".home",".away"))
+
+# this.week = this.week %>% left_join(tm_ppg[,c("team","PF","G")], by = c("home" = "team")) %>%
+#   mutate(mean.pts.home = PF/G) %>% select(-c(PF,G))
+# this.week = this.week %>% left_join(tm_ppg[,c("team","PF","G")], by = c("away" = "team")) %>%
+#   mutate(mean.pts.away = PF/G) %>% select(-c(PF,G))
+
+this.week.csv = this.week.ppg
+this.week.csv$xg.class = predict(soup.xg, this.week.csv)
+this.week.csv$xg = predict(soup.xg, this.week.csv, type = "prob")$over
+this.week.csv$rf.class = predict(soup.rf, this.week.csv)
+this.week.csv$rf = predict(soup.rf, this.week.csv, type = "prob")[,"over"]
+this.week.csv$glm.class = predict(caret.glm, this.week.csv)
+this.week.csv$glm = predict(caret.glm, this.week.csv, type = "prob")[,1]
+
+#this.week.csv = 
+this.week.csv %>%
+  select(home, away, home.close,glm.class, glm) 
+
+this.week.csv$rpart.class = predict(soup.rpart, this.week.csv, type = "class")
+this.week.csv$rpart = predict(soup.rpart, this.week.csv)[,"over"]
+  
+names(this.week.csv) = c("Away", "Home","Total", "Prediction")#, "+/- 1/2 pt Changes")
+write.csv(this.week.csv,paste0("predictions_week",week.no,".csv"), row.names = FALSE)

@@ -1,0 +1,39 @@
+library(caret)
+library(pROC)
+
+trainers = soup.tot[which(soup.tot$year %in% c(2000:2019)),]
+testers = soup.tot[which(soup.tot$year > 2017),]
+
+trainers$total.change.p.downHalf = trainers$total.change.p.upHalf = trainers$total.change.p
+
+w = 9
+w.range = 1:w
+
+form.s = formula(total.result ~ total.change.p + home.change.s)
+#form.h = formula(total.result ~ scale(total.change.p)) #.bin=="[4,8)"
+
+soup.logit.s = glm(data = trainers[which(trainers$week.bin %in% c("[12,Inf)")),], form.s, family = binomial(link = "logit"))#, weights = ifelse(trainers$total.result=="over", 1,1))
+soup.logit.s.r = glm(data = trainers[which(trainers$week %in% w.range),], form.s, family = binomial(link = "logit"))#, weights = ifelse(trainers$total.result=="over", 1,1))
+#soup.logit.s.downHalf = glm(data = trainers[which(trainers$week.bin %in% c("[1,4)")),], total.result ~ total.change.p.downHalf, family = binomial(link = "logit"))#, weights = ifelse(trainers$total.result=="over", 1,1))
+#soup.logit.s.upHalf = glm(data = trainers[which(trainers$week.bin %in% c("[1,4)")),], total.result ~ total.change.p.upHalf, family = binomial(link = "logit"))#, weights = ifelse(trainers$total.result=="over", 1,1))
+#summary(soup.logit.h)
+summary(soup.logit.s)
+summary(soup.logit.s.r)
+testers$logit.prob = predict(soup.logit.s, testers, type = "response") #predict(soup.glm, testers, type = "prob")[,"over"]
+testers$logit.class = factor(ifelse(predict(soup.logit.s, testers, type = "response") < .5, "over","under"), levels = c("over","under"))  #predict(soup.glm, testers, type = "raw")#
+testers$logit.prob.r = predict(soup.logit.s.r, testers, type = "response") #predict(soup.glm, testers, type = "prob")[,"over"]
+testers$logit.class.r = factor(ifelse(predict(soup.logit.s.r, testers, type = "response") < .5, "over","under"), levels = c("over","under"))  #predict(soup.glm, testers, type = "raw")#
+roc(testers$total.result, predict(soup.logit.s, testers[which(trainers$week.bin %in% "[8,12)"),], type = "response"), plot = TRUE)
+roc(testers$total.result, predict(soup.logit.s.r, testers[which(trainers$week.bin %in% "[8,12)"),], type = "response"), plot = TRUE)
+
+soup.rf.s = randomForest(data = trainers[which(trainers$week.bin %in% c("[12,Inf)")),], form.s, ntree = 1000, importance = TRUE)
+importance(soup.rf.s)
+testers$rf.prob = predict(soup.rf.s, testers, type = "prob")[,"over"]
+testers$rf.class = predict(soup.rf.s, testers, type = "response")
+
+confusionMatrix(testers$logit.class[which(testers$week.bin %in% "[12,Inf)")], testers$total.result[which(testers$week.bin %in% "[8,12)")])
+confusionMatrix(testers$logit.class.r[which(testers$week %in% w.range)], testers$total.result[which(testers$week %in% w.range)])
+confusionMatrix(testers$rf.class[which(testers$week.bin %in% "[8,12)")], testers$total.result[which(testers$week.bin %in% "[8,12)")])
+
+ggplot(data = soup.tot, aes(x = week, y = spread.change.s, color = total.result)) + geom_jitter() + geom_smooth(span = .9, method = "loess")
+ggplot(data = soup.tot[which(soup.tot$week %in% w.range),], aes(x = week, y = scale(total.change.p), color = total.result)) + geom_jitter() + geom_smooth(span = .9, method = "loess")

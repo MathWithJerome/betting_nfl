@@ -1,0 +1,26 @@
+{
+    "id": "5B6282BA",
+    "path": "C:/Users/jerom/Desktop/Projects/betting_nfl/spread_scrape.R",
+    "project_path": "spread_scrape.R",
+    "type": "r_source",
+    "hash": "3990776315",
+    "contents": "",
+    "dirty": false,
+    "created": 1655830687443.0,
+    "source_on_save": false,
+    "relative_order": 1,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "69,67",
+        "scrollLine": "50"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1655830737,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1655830737607,
+    "read_only": false,
+    "read_only_alternatives": []
+}

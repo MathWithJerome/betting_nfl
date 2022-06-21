@@ -1,0 +1,117 @@
+library(caret)
+library(XML)
+library(RCurl)
+
+url = "https://thefootballlines.com/nfl-point-spreads"
+tables = getURL(url,ssl.verifypeer = FALSE)
+test = htmlTreeParse(tables)
+
+bettinglines = week17
+names(bettinglines) = c("Road","RoadPts", "Home","HomePts","Date","RoadOpen","RoadClose","OpenTotal","HomeOpen","HomeClose","CloseTotal","Year")
+bettinglines = bettinglines[-which(bettinglines$Road %in% c("Showing", "NFL", "Road")),]
+df = bettinglines
+df$Week = 17
+
+for(i in c(2,4,6:length(df))) {
+  df[,i] = as.numeric(df[,i])
+}
+
+df$TotalPts = df$RoadPts + df$HomePts
+#df$favClose = ifelse(df$HomeClose < df$RoadClose, df$Home, df$Road)
+
+df$winner = "TIE"
+df$winner = ifelse(df$RoadPts > df$HomePts, "ROAD", df$winner)
+df$winner = ifelse(df$RoadPts < df$HomePts, "HOME", df$winner)
+#df$cover = 
+
+df$HomeChange = df$HomeClose - df$HomeOpen
+df$TotalChange = df$CloseTotal - df$OpenTotal
+df$week.bin = cut(df$Week, c(1,4,8,12,16))
+
+df$PtsFor = 0
+for (t in unique(df$Road)){
+  for (w in 1:16) {
+    temp = df[which(df$Road==t|df$Home==t),]
+    temp$PtsFor = ifelse(temp$Home==t, temp$HomePts, temp$RoadPts)
+  }
+}
+
+df.win = df[-which(df$winner=="TIE"),]
+df.win$winner = as.factor(as.character(df.win$winner))
+df.win$week.bin = cut(df.win$Week, c(1,4,8,12,16))
+
+e.line = merge(df.win, elo, by.x = c("Home","Road","Date"), by.y = c("team1","team2","date"))
+e.line$elo.diff = e.line$elo1 - e.line$elo2
+e.line$elo.winner = ifelse(e.line$elo1 >= e.line$elo2, 1, 0)
+
+confusionMatrix(e.line$elo.winner, e.line$result1)
+
+n = nrow(e.line)
+m = round(.65*n)
+s = sample(1:n, m)
+train = e.line[s,]
+test = e.line[-s,]
+train = train[complete.cases(train),]
+test = test[complete.cases(test),]
+
+this_week$Week = 4
+this_week$week.bin = cut(this_week$Week, c(1,4,8,12,16))
+
+full = formula(winner ~ week.bin * (HomeClose + CloseTotal + TotalChange + HomeChange + elo1 + elo.diff))
+line = formula(winner ~ week.bin * (HomeClose + CloseTotal + TotalChange + HomeChange))
+mod2 = formula(winner ~ HomeClose + CloseTotal + TotalChange + HomeChange + elo1 + elo.diff)
+
+mod3 = formula(winner ~ elo1 + elo.diff)
+
+
+l.fit = glm(data = train, mod3, family = binomial(link="logit")) #
+summary(l.fit)
+#predict(l.fit, test, type = "response")
+pred = ifelse(predict(l.fit, test) <= 0, "HOME", "ROAD")
+confusionMatrix(pred, test$winner)
+x = confusionMatrix(pred, e.line$winner)$table 
+x/rowSums(x)
+t(t(x)/colSums(x))
+l.df = data.frame(Home = predict(l.fit, this_week, type = "response"),
+                  #exp(predict(l.fit, this_week))/(1+exp(predict(l.fit, this_week))),
+                  Road = 1 - predict(l.fit, this_week, type = "response")
+                    #exp(predict(l.fit, this_week))/(1+exp(predict(l.fit, this_week)))
+)
+
+cbind(this_week$Home,this_week$Road,l.df)
+
+rf.fit = train(data = train, method = "rf", mod3)
+confusionMatrix(predict(rf.fit, test), test$winner)
+predict(rf.fit, test, type = "prob")
+cbind(this_week$Home,this_week$Road,predict(rf.fit, this_week, type = "prob"))
+
+or.fit = train(data = train, method = "nodeHarvest", mod)
+confusionMatrix(data = predict(or.fit, test), test$winner)
+cbind(this_week$Home,this_week$Road,predict(or.fit, this_week, type = "prob"))
+
+ba.fit = train(data = train, method = "bayesglm", mod3)
+confusionMatrix(data = predict(ba.fit, test), test$winner)
+cbind(this_week$Home,this_week$Road,predict(ba.fit, this_week, type = "prob"))
+
+nb.fit = train(data = train, method = "nb", mod)
+confusionMatrix(data = predict(nb.fit, test), test$winner)
+cbind(this_week$Home,this_week$Road,round(predict(nb.fit, this_week, type = "prob"),4))
+
+nn.fit = train(data = train, method = "multinom", winner ~ HomeClose + CloseTotal + HomeChange + TotalChange + Week)
+confusionMatrix(data = predict(nn.fit, test), test$winner)
+cbind(this_week$Home,this_week$Road,predict(nn.fit, this_week, type = "prob"))
+
+svm.fit = train(data = train, method = "svmLinearWeights", mod2)# + HomeChange + TotalChange + Week)
+confusionMatrix(data = predict(svm.fit, test), test$winner)
+cbind(this_week$Home,this_week$Road,predict(svm.fit, this_week, type = "prob"))
+
+this_week = week3_2017
+this_week$Week = 3 #data.frame(Week = 2, HomeT = c("CIN","BAL","KC","IND","TB","PIT","NO","JAC","CAR","OAK","LAC","SEA","DEN","LAR","ATL","NYG"),
+                    #   HomeClose = c(-5.5,-8.5,-5.5,7.5,-7,-5.5,6,1,-7,-13,-3.5,-14,2,-2.5,-3,-3),
+                    #   CloseTotal = c(38.5,39,47.5,44,44,45.5,56,42,43,43.5,45.5,42,42,46,54,43))
+data.frame(HomeT = this_week$Home,
+           RoadT = this_week$Road,
+           HOME = (1/3)*(predict(ba.fit, this_week, type = "prob")[,1] + predict(lb.fit, this_week, type = "prob")[,1] + predict(rf.fit, this_week, type = "prob")[,1]), 
+           ROAD = (1/3)*(predict(ba.fit, this_week, type = "prob")[,2] + predict(lb.fit, this_week, type = "prob")[,2] + predict(rf.fit, this_week, type = "prob")[,2])
+           )
+

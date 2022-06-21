@@ -1,7 +1,8 @@
 pbp = readRDS("pbp.rds")
 
 library(nflfastR)
-pbp.update = load_pbp(seasons = 2021)
+library(dplyr)
+pbp = load_pbp(seasons = 2011:2021)
 week.no = 16
 pbp = bind_rows(pbp, pbp.update %>% filter(week < week.no-1))
 

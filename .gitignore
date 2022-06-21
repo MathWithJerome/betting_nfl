@@ -3,6 +3,7 @@
 .Rhistory
 *.Rproj
 *.rds
+.Rproj.user/
 
 # working R scripts
 *_working.R

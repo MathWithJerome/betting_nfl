@@ -1,4 +1,10 @@
+# file types
 .RData
 .Rhistory
 *.Rproj
 *.rds
+
+# working R scripts
+*_working.R
+
+

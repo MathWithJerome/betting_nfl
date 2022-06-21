@@ -1,0 +1,131 @@
+pbp = readRDS("pbp.rds")
+
+library(nflfastR)
+pbp.update = load_pbp(seasons = 2021)
+week.no = 16
+pbp = bind_rows(pbp, pbp.update %>% filter(week < week.no-1))
+
+scores = pbp %>%
+  group_by(game_id, home_team, away_team, season, week) %>% 
+  summarise(home.score = max(total_home_score),
+            away.score = max(total_away_score), 
+            result = first(result), 
+            home.epa = last(total_home_epa),
+            away.epa = last(total_away_epa))
+
+running.ppg.l = list()
+for (t in unique(scores$home_team)) {
+  print(t)
+  tmp.h = scores %>% filter(home_team==t) %>% 
+    rename("team" = "home_team", "score" = "home.score", "epa" = "home.epa",
+           "opp" = "away_team", "opp.score" = "away.score", "opp.epa" = "away.epa") %>% 
+    mutate(home.id = T)
+  tmp.a = scores %>% filter(away_team==t) %>% 
+    rename("team" = "away_team", "score" = "away.score", "epa" = "away.epa",
+           "opp" = "home_team", "opp.score" = "home.score", "opp.epa" = "home.epa") %>% 
+    mutate(home.id = F)
+  tmp = bind_rows(tmp.h, tmp.a) %>% 
+    arrange(season, week) %>% group_by(season) %>%
+    mutate(mean.pts = cummean(score), 
+           mean.against = cummean(opp.score),
+           mean.diff = cummean(result),
+           mean.epa = cummean(epa))
+  running.ppg.l[[t]] = tmp
+}
+running.ppg = do.call(rbind,running.ppg.l) %>% 
+  group_by(team, season) %>% 
+  arrange(week) %>% 
+  mutate(count = seq(n()), 
+         mean.pts.n = (count*mean.pts-score)/(count-1),
+         mean.against.n = (count*mean.against-opp.score)/(count-1),
+         mean.diff.n = (count*mean.diff-result)/(count-1),
+         mean.epa.n = (count*mean.epa-epa)/(count-1))
+
+for (t in unique(running.ppg$team)){
+  for (s in 2012:max(running.ppg$season)) {
+    running.ppg$mean.pts.n[which(running.ppg$team==t & running.ppg$season==s & running.ppg$week==1)] = 
+      running.ppg$mean.pts[which(running.ppg$team==t & running.ppg$season==(s-1) & running.ppg$week==17)]
+    running.ppg$mean.against.n[which(running.ppg$team==t & running.ppg$season==s & running.ppg$week==1)] = 
+      running.ppg$mean.against[which(running.ppg$team==t & running.ppg$season==(s-1) & running.ppg$week==17)]
+    running.ppg$mean.epa.n[which(running.ppg$team==t & running.ppg$season==s & running.ppg$week==1)] = 
+      running.ppg$mean.epa[which(running.ppg$team==t & running.ppg$season==(s-1) & running.ppg$week==17)]
+  }
+}
+#w4 = c(1,1,1,1)
+running.ppg = running.ppg %>% arrange(season, week) %>% 
+  group_by(team) %>% 
+  mutate(score.lag = (1/4)*(lag(score)+lag(score,2)+lag(score,3)+lag(score,4)),
+         opp.score.lag = (1/4)*(lag(opp.score)+lag(opp.score,2)+lag(opp.score,3)+lag(opp.score,4)),
+         epa.lag = (1/4)*(lag(epa)+lag(epa,2)+lag(epa,3)+lag(epa,4)))
+  
+running.ppg = running.ppg %>% 
+  mutate(score.lag = if_else(is.na(score.lag), mean.pts.n, score.lag),
+         opp.score.lag = if_else(is.na(opp.score.lag), mean.against.n, opp.score.lag),
+         epa.lag = if_else(is.na(epa.lag), mean.epa.n, epa.lag))
+
+#### this week ----
+library(nflfastR)
+
+pbp.new = load_pbp(seasons = 2020:2021)
+
+scores = pbp.new %>%
+  group_by(game_id, home_team, away_team, season, week) %>% 
+  summarise(home.score = max(total_home_score),
+            away.score = max(total_away_score), 
+            result = first(result), 
+            home.epa = last(total_home_epa),
+            away.epa = last(total_away_epa))
+
+ppg.new.l = list()
+for (t in teams) {
+  print(t)
+  tmp.h = scores %>% filter(home_team==t) %>% 
+    rename("team" = "home_team", "score" = "home.score", "epa" = "home.epa",
+           "opp" = "away_team", "opp.score" = "away.score", "opp.epa" = "away.epa") %>% 
+    mutate(home.id = T)
+  tmp.a = scores %>% filter(away_team==t) %>% 
+    rename("team" = "away_team", "score" = "away.score", "epa" = "away.epa",
+           "opp" = "home_team", "opp.score" = "home.score", "opp.epa" = "home.epa") %>% 
+    mutate(home.id = F)
+  tmp = bind_rows(tmp.h, tmp.a) %>% 
+    arrange(season, week) %>% group_by(season) %>%
+    mutate(mean.pts = cummean(score), 
+           mean.against = cummean(opp.score),
+           mean.diff = cummean(result),
+           mean.epa = cummean(epa))
+  ppg.new.l[[t]] = tmp
+}
+ppg.new = do.call(rbind,ppg.new.l) %>% 
+  group_by(team, season) %>% 
+  arrange(week) %>% 
+  mutate(count = seq(n()), 
+         mean.pts.n = (count*mean.pts-score)/(count-1),
+         mean.against.n = (count*mean.against-opp.score)/(count-1),
+         mean.diff.n = (count*mean.diff-result)/(count-1),
+         mean.epa.n = (count*mean.epa-epa)/(count-1))
+
+for (t in teams){
+  #for (s in 2012:max(running.ppg$season)) {
+  s = 2021
+    ppg.new$mean.pts.n[which(ppg.new$team==t & ppg.new$season==s & ppg.new$week==1)] = 
+      ppg.new$mean.pts[which(ppg.new$team==t & ppg.new$season==(s-1) & ppg.new$week==17)]
+    ppg.new$mean.against.n[which(ppg.new$team==t & ppg.new$season==s & ppg.new$week==1)] = 
+      ppg.new$mean.against[which(ppg.new$team==t & ppg.new$season==(s-1) & ppg.new$week==17)]
+    ppg.new$mean.epa.n[which(ppg.new$team==t & ppg.new$season==s & ppg.new$week==1)] = 
+      ppg.new$mean.epa[which(ppg.new$team==t & ppg.new$season==(s-1) & ppg.new$week==17)]
+  #}
+}
+#w4 = c(1,1,1,1)
+ppg.new = ppg.new %>% arrange(season, week) %>% 
+  group_by(team) %>% 
+  mutate(score.lag = (1/4)*(lag(score)+lag(score,2)+lag(score,3)+lag(score,4)),
+         opp.score.lag = (1/4)*(lag(opp.score)+lag(opp.score,2)+lag(opp.score,3)+lag(opp.score,4)),
+         epa.lag = (1/4)*(lag(epa)+lag(epa,2)+lag(epa,3)+lag(epa,4)))
+
+ppg.new = ppg.new %>% 
+  mutate(score.lag = if_else(is.na(score.lag), mean.pts.n, score.lag),
+         opp.score.lag = if_else(is.na(opp.score.lag), mean.against.n, opp.score.lag),
+         epa.lag = if_else(is.na(epa.lag), mean.epa.n, epa.lag))
+
+ppg.new = ppg.new %>% filter(season==2021, week==week.no-1)
+ppg.new$team[which(ppg.new$team=="LA")] = "LAR"

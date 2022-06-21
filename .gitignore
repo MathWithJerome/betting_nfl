@@ -6,6 +6,6 @@
 
 # working R scripts
 *_working.R
-^_*.R
+_*.R
 
 

@@ -6,6 +6,13 @@ library(rpart)
 library(rpart.plot)
 library(modelr)
 
+pbp = data.frame()
+for (y in 2011:2021) {
+  x = readRDS(paste0("C:\\Users\\jerom\\Desktop\\Projects\\play_data\\play_by_play_",y,".rds"))
+  pbp = rbind(x,pbp)
+  print(y)
+}
+
 setDT(pbp)
 setDT(pbp.update)
 
@@ -37,7 +44,7 @@ for (y in 2011:2021) {
                    avg.pythag = sum(pythag*drive_duration)/sum(drive_duration)), by = .(game_id,week,season)]
     tmp.f[,`:=` (win = ifelse(final.diff > 0, 1, 0), 
                  final.pythag = tm_score^2/(tm_score^2 + opp_score^2))]
-    tmp.f/,   
+    #tmp.f/,   
     avg_pt_diff.w = rbind(avg_pt_diff.w, tmp.f)
   }
 }
